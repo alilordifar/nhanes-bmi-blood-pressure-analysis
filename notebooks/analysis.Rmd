@@ -1,0 +1,110 @@
+---
+title: "Does Body Mass Index Predict Blood Pressure? Evidence from NHANES"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This notebook loads the NHANES data for our STAT203 project and prepares the datasets for later cleaning, merging, and regression analysis.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Load Required Packages
+
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+## 2. Load NHANES Data
+
+NHANES stores different types of information in separate files. For this project, we will use the demographics file, the body measures file, and the blood pressure file. Each dataset contains information on the same individuals, and later we will merge them using the participant identifier `SEQN`.
+
+```{r}
+data_path <- "../data/external/"
+
+demo <- read_xpt(file.path(data_path, "DEMO_J.xpt"))
+bmx  <- read_xpt(file.path(data_path, "BMX_J.xpt"))
+bpx  <- read_xpt(file.path(data_path, "BPX_J.xpt"))
+smq  <- read_xpt(file.path(data_path, "SMQ_J.xpt"))
+```
+
+## 3. Inspect the Data
+
+At this stage, the goal is simply to confirm that the files loaded correctly and to get familiar with the structure of each dataset.
+
+```{r}
+head(demo)
+head(bmx)
+head(bpx)
+head(smq)
+```
+
+```{r}
+cat("Demographic Data Columns...\n\n")
+colnames(demo)
+cat("\n")
+cat("Body Measure Data Columns...\n\n")
+colnames(bmx)
+cat("\n")
+cat("Blood Pressure Data Columns...\n\n")
+colnames(bpx)2
+cat("\n")
+cat("Smoking Questioner Data Columns...\n\n")
+colnames(smq)
+```
+
+```{r}
+demo_small <- demo %>%
+  select(SEQN, RIDAGEYR)
+
+bmx_small <- bmx %>%
+  select(SEQN, BMXBMI)
+
+bpx_small <- bpx %>%
+  select(SEQN, BPXSY1)
+
+smq_small <- smq %>%
+  select(SEQN, SMQ020)
+```
+
+```{r}
+df <- demo_small %>%
+  inner_join(bmx_small, by = "SEQN") %>%
+  inner_join(bpx_small, by = "SEQN") %>%
+  inner_join(smq_small, by = "SEQN")
+```
+
+```{r}
+df
+unique(df$SMQ020)
+```
+
+```{r}
+df_clean <- df %>%
+  drop_na() %>%
+  mutate(
+    smoking = ifelse(SMQ020 == 1, 1,
+                     ifelse(SMQ020 == 2, 0, NA))
+  ) %>%
+  drop_na(smoking) %>%
+  select(SEQN, RIDAGEYR, BMXBMI, BPXSY1, smoking)
+df_clean
+```
+
+```{r}
+df_clean <- df_clean %>%
+  rename(
+    age = RIDAGEYR,
+    bmi = BMXBMI,
+    bp = BPXSY1
+  )
+
+df_clean
+```
+
+```{r}
+write_csv(df_clean, "../data/processed/nhanes_clean.csv")
+```
