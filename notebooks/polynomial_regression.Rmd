@@ -1,0 +1,64 @@
+---
+title: "Polynomial Regression: Nonlinear Effect of BMI on Blood Pressure"
+author: "Edward"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+## Overview
+
+In this analysis, I applied polynomial regression to look at how BMI relates to systolic blood pressure. I wanted to see if the relationship between BMI and BP is really a straight line, or if it curves — for example, whether a higher BMI has a bigger impact on BP than a lower one. To test this, I added a squared BMI term (BMI²) to the model. I also included age and smoking as additional predictors.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Load Packages and Data
+
+```{r}
+library(tidyverse)
+
+df <- read_csv("../data/processed/nhanes_clean.csv")
+head(df)
+```
+
+## 2. Fit the Polynomial Model
+
+`poly(bmi, 2)` adds both a linear and quadratic BMI term, using orthogonal polynomials to reduce multicollinearity.
+
+```{r}
+model_poly <- lm(bp ~ poly(bmi, 2) + age + smoking, data = df)
+summary(model_poly)
+```
+
+## 3. Visualize the BMI Curve
+
+I plotted the fitted curve over the raw data to see if the model picks up any curvature. I kept age at its mean and set smoking to 0 just to make the plot easier to read.
+
+```{r}
+bmi_seq <- seq(min(df$bmi), max(df$bmi), length.out = 200)
+
+pred_df <- data.frame(
+  bmi     = bmi_seq,
+  age     = mean(df$age),
+  smoking = 0
+)
+pred_df$bp_hat <- predict(model_poly, newdata = pred_df)
+
+ggplot(df, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.2, color = "steelblue") +
+  geom_line(data = pred_df, aes(x = bmi, y = bp_hat), color = "red", linewidth = 1) +
+  labs(
+    title = "Polynomial Regression: BMI vs Systolic BP",
+    subtitle = "Red curve: quadratic fit (age and smoking held constant)",
+    x = "BMI",
+    y = "Systolic Blood Pressure (mmHg)"
+  )
+```
+
+## 4. Interpretation
+
+- **BMI²**: Based on the model result, BMI² has no significant relation with blood pressure (p = 0.268).
+- **Age**: Based on the model result, age has a significant relation with blood pressure (p < 0.001).
+- **Smoking**: Based on the model result, smoking has no significant relation with blood pressure (p = 0.591).
+- **Adjusted R²**: 0.2569
