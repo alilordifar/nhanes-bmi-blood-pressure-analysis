@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidyverse)
 library(haven)
+library(ggplot2)
 ```
 
 ## 2. Load NHANES Data
@@ -107,4 +108,35 @@ df_clean
 
 ```{r}
 write_csv(df_clean, "../data/processed/nhanes_clean.csv")
+```
+
+```{r}
+ggplot(df_clean, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.3) +
+  labs(
+    title = "BMI vs Blood Pressure",
+    x = "Body Mass Index (BMI)",
+    y = "Systolic Blood Pressure"
+  )
+```
+```{r}
+ggplot(df_clean, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(
+    title = "BMI vs Blood Pressure with Regression Line",
+    x = "BMI",
+    y = "Systolic Blood Pressure"
+  )
+```
+
+```{r}
+model <- lm(bp ~ bmi, data = df_clean)
+
+summary(model)
+```
+
+```{r}
+model2 <- lm(bp ~ bmi + smoking, data = df_clean)
+summary(model2)
 ```
