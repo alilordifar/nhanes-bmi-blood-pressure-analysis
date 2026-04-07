@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(haven)
 library(ggplot2)
+library(stargazer)
 ```
 
 ## 2. Load NHANES Data
@@ -119,6 +120,11 @@ ggplot(df_clean, aes(x = bmi, y = bp)) +
     y = "Systolic Blood Pressure"
   )
 ```
+
+As BMI Increases --> Blood Pressure tends to increase
+
+While BMI shows a positive association with systolic blood pressure, there is substantial variability, suggesting that additional factors (e.g., age, smoking) play an important role in explaining blood pressure differences.
+
 ```{r}
 ggplot(df_clean, aes(x = bmi, y = bp)) +
   geom_point(alpha = 0.3) +
@@ -130,13 +136,112 @@ ggplot(df_clean, aes(x = bmi, y = bp)) +
   )
 ```
 
-```{r}
-model <- lm(bp ~ bmi, data = df_clean)
+## Model1: Simple Linear Regression Model
+On average, how does blood pressure change as BMI changes?
+$$bp=β0​+β1​bmi + ϵ$$
+### Model Summary:
 
-summary(model)
+1. Coefficient for BMI
+A one-unit increase in BMI is associated with an average increase of about 0.36 units in systolic blood pressure.
+
+2. Statistical significance: P-Value is very small
+There is very strong statistical evidence that BMI is positively associated with blood pressure.
+
+3. R-squared
+BMI explains only about 1.8% of the variation in blood pressure.
+
+4. Residual standard error
+On average, predictions are off by about ±19 units of blood pressure
+
+While BMI shows a statistically significant positive association with blood pressure, it explains only a very small portion of the variation, suggesting that other factors play a substantial role.
+```{r}
+model1 <- lm(bp ~ bmi, data = df_clean)
+
+summary(model1)
 ```
+### Model2: Multiple Linear Regression
+$$
+bp=β0​+β1​bmi+β2​age+β3​smoking+ϵ
+$$
+### Model2 Summary:
+What is the relationship between BMI and blood pressure holding age and smoking constant?
+
+1. BMI coefficient
+Holding age and smoking constant, a one-unit increase in BMI is associated with a 0.31 increase in blood pressure.
+Note: Part of the relationship in Model 1 was actually due to confounding (mainly age).
+
+2. Age coefficient
+Each additional year of age is associated with about a 0.51 increase in blood pressure, holding BMI and smoking constant.
+
+3. Smoking coefficient
+Smoking does not show a statistically significant association with blood pressure in this model.
+
+4. R-squared
+The model now explains a much larger portion of the variation in blood pressure.
+
+5. Residual standard error
+Improved from 19.3 to 16.8, hence, Predictions are more accurate now.
+
+Conclusion:
+
+The simple regression model shows a statistically significant positive relationship between BMI and systolic blood pressure. However, the model explains only a small fraction of the variation in blood pressure.
+
+After including additional variables such as age and smoking status, the explanatory power of the model increases substantially. Age emerges as a strong and significant predictor, while the effect of BMI remains positive but slightly reduced, suggesting that part of the initial association was influenced by confounding factors.
+
+Smoking does not appear to have a statistically significant relationship with blood pressure in this specification.
 
 ```{r}
-model2 <- lm(bp ~ bmi + smoking, data = df_clean)
+model2 <- lm(bp ~ bmi + age + smoking, data = df_clean)
+
 summary(model2)
 ```
+
+
+### Regression Table
+
+```{r}
+stargazer(model1, model2,
+          type = "text",
+          title = "Regression Results: BMI and Blood Pressure",
+          dep.var.labels = "Systolic Blood Pressure",
+          covariate.labels = c("BMI", "Age", "Smoking"),
+          digits = 3)
+```
+
+```{r}
+residuals_model2 <- resid(model2)
+fitted_model2 <- fitted(model2)
+```
+
+```{r}
+ggplot(data.frame(fitted_model2, residuals_model2), 
+       aes(x = fitted_model2, y = residuals_model2)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(title = "Residuals vs Fitted",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+
+### Histogram of Residulas
+
+```{r}
+ggplot(data.frame(residuals_model2), aes(x = residuals_model2)) +
+  geom_histogram(bins = 30, fill = "blue", alpha = 0.7) +
+  labs(title = "Histogram of Residuals")
+```
+
+### Q-Q Plot
+
+```{r}
+qqnorm(residuals_model2)
+qqline(residuals_model2, col = "red")
+```
+
+### Regression Assumptions
+
+The assumptions of the linear regression model were evaluated using residual diagnostic plots. The residuals versus fitted values plot shows that residuals are generally centered around zero without a clear systematic pattern, suggesting that the linearity assumption is reasonably satisfied. However, there is some evidence of increasing variability in residuals at higher fitted values, indicating mild heteroskedasticity.
+
+The histogram of residuals shows an approximately bell-shaped distribution centered around zero, although with slight right skewness. This is further supported by the Q-Q plot, where most observations lie close to the reference line, with some deviation in the upper tail. These results suggest that the normality assumption is largely satisfied, with minor deviations at the extremes.
+
+Overall, while there are small departures from ideal assumptions, particularly in terms of constant variance, these deviations are not severe and do not undermine the validity of the linear regression model for descriptive analysis.
