@@ -52,7 +52,7 @@ cat("Body Measure Data Columns...\n\n")
 colnames(bmx)
 cat("\n")
 cat("Blood Pressure Data Columns...\n\n")
-colnames(bpx)2
+colnames(bpx)
 cat("\n")
 cat("Smoking Questioner Data Columns...\n\n")
 colnames(smq)
@@ -138,7 +138,9 @@ ggplot(df_clean, aes(x = bmi, y = bp)) +
 
 ## Model1: Simple Linear Regression Model
 On average, how does blood pressure change as BMI changes?
-$$bp=β0​+β1​bmi + ϵ$$
+$$
+bp = \beta_0 + \beta_1 bmi + \epsilon
+$$
 ### Model Summary:
 
 1. Coefficient for BMI
@@ -161,8 +163,9 @@ summary(model1)
 ```
 ### Model2: Multiple Linear Regression
 $$
-bp=β0​+β1​bmi+β2​age+β3​smoking+ϵ
+bp = \beta_0 + \beta_1 bmi + \beta_2 age + \beta_3 smoking + \epsilon
 $$
+
 ### Model2 Summary:
 What is the relationship between BMI and blood pressure holding age and smoking constant?
 
