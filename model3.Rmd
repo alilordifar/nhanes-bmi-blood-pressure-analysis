@@ -1,0 +1,102 @@
+---
+title: "Model 3: Extending the BMI and Blood Pressure Regression"
+author: "Brett"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(stargazer)
+
+df <- read_csv("data/processed/nhanes_clean.csv")
+
+head(df)
+summary(df)
+```
+```{r}
+model2 <- lm(bp ~ bmi + age + smoking, data = df)
+summary(model2)
+```
+```{r}
+model3 <- lm(bp ~ bmi * age + smoking, data = df)
+summary(model3)
+```
+```{r}
+model_comp <- tibble(
+  Model = c("Model 2: BMI + Age + Smoking",
+            "Model 3: BMI x Age Interaction + Smoking"),
+  Adj_R2 = c(
+    summary(model2)$adj.r.squared,
+    summary(model3)$adj.r.squared
+  ),
+  AIC = c(
+    AIC(model2),
+    AIC(model3)
+  ),
+  BIC = c(
+    BIC(model2),
+    BIC(model3)
+  ),
+  RSE = c(
+    sigma(model2),
+    sigma(model3)
+  )
+)
+
+model_comp
+```
+```{r}
+anova(model2, model3)
+```
+```{r}
+stargazer(
+  model2, model3,
+  type = "text",
+  title = "Regression Results: Blood Pressure Models",
+  dep.var.labels = "Systolic Blood Pressure",
+  covariate.labels = c("BMI", "Age", "Smoking", "BMI x Age"),
+  digits = 3
+)
+```
+
+```{r}
+age_vals <- c(25, 45, 65)
+
+plot_df <- expand.grid(
+  bmi = seq(min(df$bmi, na.rm = TRUE), max(df$bmi, na.rm = TRUE), length.out = 200),
+  age = age_vals,
+  smoking = 0
+)
+
+plot_df$bp_hat <- predict(model3, newdata = plot_df)
+plot_df$age_group <- factor(plot_df$age)
+
+ggplot(df, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.12, color = "steelblue") +
+  geom_line(
+    data = plot_df,
+    aes(x = bmi, y = bp_hat, color = age_group),
+    linewidth = 1.2
+  ) +
+  labs(
+    title = "Interaction Model: BMI and Blood Pressure by Age",
+    subtitle = "Predicted blood pressure at ages 25, 45, and 65 (smoking held constant at 0)",
+    x = "BMI",
+    y = "Systolic Blood Pressure",
+    color = "Age"
+  ) +
+  theme_minimal()
+```
+
+In this model, we include an interaction between BMI and age to test whether the effect of BMI on blood pressure is constant across individuals. In earlier models, BMI was assumed to have the same impact regardless of age, but this may not be realistic since health effects often vary over the life cycle.
+The results show that both BMI and age are positively associated with blood pressure. The estimated coefficient for BMI is 0.836, and for age is 0.834, indicating that increases in either variable are associated with higher blood pressure. However, because the model includes an interaction term, these effects are not constant and must be interpreted together.
+The interaction term between BMI and age is -0.0112 and is highly statistically significant (p < 0.001). This means that the effect of BMI on blood pressure decreases as age increases. For example, at age 25, a one-unit increase in BMI is associated with an increase of approximately 0.56 mmHg in blood pressure, while at age 65, the effect is much smaller, around 0.11 mmHg. This suggests that BMI has a stronger impact on blood pressure among younger individuals and a weaker impact among older individuals.
+Smoking has an estimated coefficient of -0.303 and is not statistically significant (p = 0.542), indicating no clear relationship with blood pressure in this model.
+In terms of model performance, including the interaction improves the fit compared to the previous model. The adjusted R-squared increases from 0.2569 to 0.2622, and the residual standard error decreases slightly from about 16.78 to 16.72, indicating a modest but meaningful improvement in explanatory power.
+Overall, the interaction model provides a more flexible and realistic representation of the relationship between BMI and blood pressure by allowing the effect of BMI to vary across different ages.
+
