@@ -1,0 +1,50 @@
+---
+---
+title: "Interaction Regression: BMI and Age Effects on Blood Pressure"
+author: "Brett Anwar"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r}
+library(tidyverse)
+
+df <- read_csv("data/processed/nhanes_clean.csv")
+head(df)
+```
+```{r}
+model_interaction <- lm(bp ~ bmi * age + smoking, data = df)
+summary(model_interaction)
+```
+```{r}
+bmi_seq <- seq(min(df$bmi), max(df$bmi), length.out = 200)
+
+pred_df <- expand.grid(
+  bmi = bmi_seq,
+  age = c(25, 45, 65),
+  smoking = 0
+)
+
+pred_df$bp_hat <- predict(model_interaction, newdata = pred_df)
+
+ggplot(df, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.2, color = "steelblue") +
+  geom_line(data = pred_df, aes(x = bmi, y = bp_hat, color = factor(age)), linewidth = 1) +
+  labs(
+    title = "Interaction Regression: BMI vs Systolic BP",
+    subtitle = "Lines show fitted values at ages 25, 45, and 65 (smoking held constant)",
+    x = "BMI",
+    y = "Systolic Blood Pressure (mmHg)",
+    color = "Age"
+  )
+```
+
+- **BMI × Age**: Based on the model result, the interaction between BMI and age has a significant relation with blood pressure (p < 0.001).
+- **BMI**: Based on the model result, BMI has a significant relation with blood pressure (estimate = 0.836, p < 0.001).
+- **Age**: Based on the model result, age has a significant relation with blood pressure (estimate = 0.834, p < 0.001).
+- **Smoking**: Based on the model result, smoking has no significant relation with blood pressure (p = 0.542).
+- **Direction of Interaction**: Based on the model result, the interaction coefficient is negative (estimate = -0.0112), which suggests that the effect of BMI on blood pressure becomes smaller as age increases.
+- **Adjusted R²**: 0.2622
+
+Overall, this model suggests that BMI is positively associated with systolic blood pressure, but the strength of this relationship depends on age. Compared to the previous model, this specification provides a modest improvement in explanatory power and captures a more flexible relationship between BMI, age, and blood pressure.
+
