@@ -1,0 +1,97 @@
+---
+title: "finalReport.pdf"
+authors: "Ali, Eddy, Ron & Brett"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+
+df <- read_csv("data/processed/nhanes_clean.csv")
+head(df)
+```
+
+```{r}
+
+```
+
+## Part 1: Intro (Ali)
+
+## Part 2: Data Source (Ali)
+
+## Part 3: Data Wrangling (Ali)
+
+## Part 4: Operationalization (Ron)
+
+## Part 5: Visualization (Brett)
+
+```{r}
+## Visualization: BMI and Blood Pressure by Age Group
+
+library(tidyverse)
+library(ggplot2)
+
+# Load data
+df <- read_csv("data/processed/nhanes_clean.csv")
+
+# Create age groups
+df_plot <- df %>%
+  mutate(
+    age_group = case_when(
+      age < 35 ~ "18-34",
+      age < 55 ~ "35-54",
+      TRUE ~ "55+"
+    ),
+    age_group = factor(age_group, levels = c("18-34", "35-54", "55+"))
+  )
+
+# Plot
+ggplot(df_plot, aes(x = bmi, y = bp, color = age_group)) +
+  geom_point(
+    alpha = 0.25,
+    size = 1.2
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "Figure 1: BMI and Systolic Blood Pressure",
+    x = "Body Mass Index (BMI)",
+    y = "Systolic Blood Pressure (mmHg)",
+    color = "Age Group"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 11),
+    axis.title = element_text(face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(linewidth = 0.3)
+  )
+```
+
+## Part 6: Model Specification (All together)
+
+To describe the relationship between BMI and systolic blood pressure, I estimate a regression model that allows the effect of BMI to vary with age. This is done by including an interaction term between BMI and age. This specification is motivated by the visualization, which suggests that the relationship between BMI and blood pressure may differ across age groups.
+
+```{r}
+# Fit interaction model
+model3 <- lm(bp ~ bmi * age, data = df)
+library(stargazer)
+
+stargazer(
+  model3,
+  type = "text",
+  title = "Regression Results: BMI and Blood Pressure",
+  dep.var.labels = "Systolic Blood Pressure",
+  covariate.labels = c("BMI", "Age", "BMI x Age"),
+  digits = 3
+)
+```
+
+## Part 7: Model Assumption (All together)
+
+## Part 8: Model Result and Interpretation (Edward)
+
+## Part 9: Overall Effect (Edward)
