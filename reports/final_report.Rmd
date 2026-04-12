@@ -4,6 +4,14 @@ output: pdf_document
 date: "2026-04-11"
 ---
 
+```{r setup, include=FALSE}
+library(tidyverse)
+library(stargazer)
+library(sandwich)
+
+df <- read_csv("data/processed/nhanes_clean.csv")
+```
+
 ## Introduction
 Body mass index and blood pressure are two widely used health indicators that are closely linked to cardiovascular risk. Understanding how these measures relate to each other is important for clinicians, public health researchers, and policymakers who aim to better understand patterns in population health. This project focuses on a descriptive question: what is the relationship between body mass index and systolic blood pressure? Rather than making a causal claim or building a predictive model, the goal is to describe the strength and shape of the association between these variables in a large public health dataset. This is particularly relevant because excess body weight is often associated with hypertension, and a clear descriptive analysis can show how blood pressure tends to vary across individuals with different BMI levels.
 
@@ -22,6 +30,35 @@ The final dataset was created by combining multiple NHANES component files, incl
 We begin with a simple linear regression model that examines the relationship between body mass index and systolic blood pressure. In this specification, systolic blood pressure is modeled as a function of BMI alone. The purpose of this model is to establish a baseline understanding of the association between these two variables without adjusting for additional factors.
 
 To improve the model, we then extend the specification by including age and smoking status as additional explanatory variables. These variables are included because they are known to influence blood pressure and may also be correlated with BMI. By adding these controls, the extended model provides a more accurate description of the relationship between BMI and blood pressure while accounting for potential confounding factors.
+
+We also wanted to check if the relationship between BMI and blood pressure is really a straight line, or if it curves at higher BMI values. To explore this, we added a squared BMI term (BMI²) to the model along with age and smoking. This lets us see whether the effect of BMI on blood pressure gets stronger as BMI increases, or whether a linear model already captures the shape well enough.
+
+```{r estimate models}
+model_one   <- lm(bp ~ bmi, data = df)
+model_two   <- lm(bp ~ bmi + age + smoking, data = df)
+model_three <- lm(bp ~ bmi + I(bmi^2) + age + smoking, data = df)
+```
+
+```{r report models, message = FALSE, warning = FALSE, results = 'asis'}
+stargazer(
+  model_one,
+  model_two,
+  model_three,
+  header = FALSE,
+  se = list(
+    sqrt(diag(vcovHC(model_one))),
+    sqrt(diag(vcovHC(model_two))),
+    sqrt(diag(vcovHC(model_three)))
+  ),
+  type = ifelse(knitr::is_latex_output(), "latex", "html"),
+  covariate.labels = c("BMI", "BMI Squared", "Age", "Smoking", "Intercept"),
+  digits = 2,
+  omit.stat = c('ser', 'f'),
+  star.cutoffs = c(0.05, 0.01, 0.001),
+  title = "Regression Results: BMI and Systolic Blood Pressure",
+  dep.var.labels = "Systolic Blood Pressure (mmHg)"
+)
+```
 
 ## Model Assumptions
 The assumptions of the linear regression models were evaluated using standard residual diagnostics for both the simple model (BMI only) and the extended model including age and smoking. In both specifications, the residuals versus fitted values plots show that residuals are generally centered around zero without strong nonlinear patterns, suggesting that the linearity assumption is reasonable. However, there is some evidence of increasing spread in the residuals at higher fitted values, indicating mild heteroscedasticity.
