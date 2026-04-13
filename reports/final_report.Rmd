@@ -74,7 +74,9 @@ The assumptions of the linear regression models were evaluated using standard re
 
 The distribution of residuals appears approximately normal in both models. The histograms show a roughly bell-shaped distribution, and the Q-Q plots indicate that residuals closely follow the theoretical normal line in the central region, with some deviations in the tails. These deviations suggest that normality is not perfectly satisfied, but given the large sample size, they are unlikely to substantially affect the validity of the estimates.
 
-Comparing the two models, the extended model shows a slight improvement in residual behavior, with reduced spread and better overall fit. This suggests that including age helps explain additional variation in blood pressure. For Model 3, the residual pattern looks very similar to Model 2 — adding BMI² did not meaningfully change the distribution of residuals or reduce the spread, which lines up with the finding that the BMI² term was not statistically significant. Overall, while some assumptions are only approximately satisfied, the models provide a reasonable and credible descriptive approximation of the relationship between BMI and blood pressure.
+Comparing the two models, the extended model shows a slight improvement in residual behavior, with reduced spread and better overall fit. This suggests that including age helps explain additional variation in blood pressure. 
+
+For Model 3, the residual pattern looks very similar to Model 2 — adding BMI² did not meaningfully change the distribution of residuals or reduce the spread, which lines up with the finding that the BMI² term was not statistically significant. Overall, while some assumptions are only approximately satisfied, the models provide a reasonable and credible descriptive approximation of the relationship between BMI and blood pressure.
 
 
 ## Model Results and Interpretation
