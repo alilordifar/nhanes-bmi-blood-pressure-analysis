@@ -35,6 +35,7 @@ We begin with a simple linear regression model that examines the relationship be
 
 To improve the model, we then extend the specification by including age and smoking status as additional explanatory variables. These variables are included because they are known to influence blood pressure and may also be correlated with BMI. By adding these controls, the extended model provides a more accurate description of the relationship between BMI and blood pressure while accounting for potential confounding factors.
 
+
 We also wanted to check if the relationship between BMI and blood pressure is really a straight line, or if it curves at higher BMI values. To explore this, we added a squared BMI term (BMI²) to the model along with age and smoking. This lets us see whether the effect of BMI on blood pressure gets stronger as BMI increases, or whether a linear model already captures the shape well enough.
 
 ```{r estimate models}
@@ -64,23 +65,27 @@ stargazer(
 )
 ```
 
+![Simple Regression Models](images/Simple_models_stargazer.png)
+
+
 ## Model Assumptions
 
 The assumptions of the linear regression models were evaluated using standard residual diagnostics for both the simple model (BMI only) and the extended model including age and smoking. In both specifications, the residuals versus fitted values plots show that residuals are generally centered around zero without strong nonlinear patterns, suggesting that the linearity assumption is reasonable. However, there is some evidence of increasing spread in the residuals at higher fitted values, indicating mild heteroscedasticity.
 
 The distribution of residuals appears approximately normal in both models. The histograms show a roughly bell-shaped distribution, and the Q-Q plots indicate that residuals closely follow the theoretical normal line in the central region, with some deviations in the tails. These deviations suggest that normality is not perfectly satisfied, but given the large sample size, they are unlikely to substantially affect the validity of the estimates.
 
-Comparing the models, Model 2 shows a slight improvement in residual behavior over the baseline, with reduced spread and better overall fit. This suggests that including age helps explain additional variation in blood pressure. For Model 3, the residual pattern looks very similar to Model 2 — adding BMI² did not meaningfully change the distribution of residuals or reduce the spread, which lines up with the finding that the BMI² term was not statistically significant. Overall, while some assumptions are only approximately satisfied, the models provide a reasonable descriptive approximation of the relationship between BMI and blood pressure.
+Comparing the two models, the extended model shows a slight improvement in residual behavior, with reduced spread and better overall fit. This suggests that including age helps explain additional variation in blood pressure. For Model 3, the residual pattern looks very similar to Model 2 — adding BMI² did not meaningfully change the distribution of residuals or reduce the spread, which lines up with the finding that the BMI² term was not statistically significant. Overall, while some assumptions are only approximately satisfied, the models provide a reasonable and credible descriptive approximation of the relationship between BMI and blood pressure.
+
 
 ## Model Results and Interpretation
 
-Across all three models, BMI shows a statistically significant positive association with systolic blood pressure. In Model 1, a one-unit increase in BMI is associated with an average increase of 0.36 mmHg in systolic blood pressure (p \< 0.001). This association remains significant after controlling for age and smoking in Model 2, where the BMI coefficient is 0.31 mmHg per unit (p \< 0.001). The slight reduction from 0.36 to 0.31 suggests that a small part of the baseline association was explained by age being correlated with both BMI and blood pressure.
+The simple linear regression model shows a positive and statistically significant relationship between body mass index and systolic blood pressure. The estimated coefficient for BMI indicates that a one-unit increase in BMI is associated with an average increase of approximately 0.36 mmHg in systolic blood pressure. While this relationship is statistically significant, the magnitude of the effect is relatively small, suggesting that BMI alone has limited practical impact on blood pressure. This is further supported by the low R-squared value of approximately 0.018, indicating that BMI explains only a small fraction of the variation in blood pressure.
 
-Age turns out to be the strongest predictor in the model. In Model 2, each additional year of age is associated with an average increase of 0.51 mmHg in systolic blood pressure, holding BMI and smoking constant (p \< 0.001). Smoking status, on the other hand, is not statistically significant (p = 0.62), meaning we do not find a meaningful association between smoking and blood pressure in this dataset after accounting for BMI and age.
+When the model is extended to include age and smoking status, the explanatory power increases substantially, with the R-squared rising to approximately 0.26. In this specification, BMI remains statistically significant, although its estimated effect decreases slightly, suggesting that part of the association observed in the simple model is explained by other variables, particularly age. Age shows a strong and statistically significant positive relationship with blood pressure, indicating that it is a key factor in explaining variation in the outcome. Smoking status, however, does not appear to have a statistically significant effect in this model. Overall, the results suggest that while BMI is associated with blood pressure, its effect is modest compared to other factors such as age.
 
 In Model 3, adding a BMI² term did not improve the model — neither the linear nor the squared BMI term is significant (p = 0.59 and p = 0.42, respectively), and the R² barely changes from 25.7% to 25.8%. This suggests the relationship between BMI and blood pressure is essentially linear within the range observed in this dataset, and the more complex polynomial model does not add descriptive value.
 
-To put the practical significance in context, consider a hypothetical non-smoking person at the average age of about 49 years. A person with a BMI of 18.5 (underweight) is predicted to have a systolic blood pressure of about 122 mmHg. That rises to about 124 mmHg at a BMI of 25 (healthy weight), 126 mmHg at a BMI of 30 (obese), and 129 mmHg at a BMI of 40 (severely obese). While these differences are statistically significant, an increase of about 7 mmHg across the full BMI range is modest in clinical terms — though it could be meaningful at the population level given how many people fall into the higher BMI categories.
+
 
 ## Overall Effect
 
