@@ -55,11 +55,11 @@ stargazer(
     sqrt(diag(vcovHC(model_two))),
     sqrt(diag(vcovHC(model_three)))
   ),
-  type = ifelse(knitr::is_latex_output(), "latex", "html"),
+  type = "latex",
   covariate.labels = c("BMI", "BMI Squared", "Age", "Smoking", "Intercept"),
   digits = 2,
   omit.stat = c('ser', 'f'),
-  star.cutoffs = c(0.05, 0.01, 0.001),
+  star.cutoffs = c(0.1, 0.05, 0.01),
   title = "Regression Results: BMI and Systolic Blood Pressure",
   dep.var.labels = "Systolic Blood Pressure (mmHg)"
 )
@@ -84,8 +84,6 @@ The simple linear regression model shows a positive and statistically significan
 When the model is extended to include age and smoking status, the explanatory power increases substantially, with the R-squared rising to approximately 0.26. In this specification, BMI remains statistically significant, although its estimated effect decreases slightly, suggesting that part of the association observed in the simple model is explained by other variables, particularly age. Age shows a strong and statistically significant positive relationship with blood pressure, indicating that it is a key factor in explaining variation in the outcome. Smoking status, however, does not appear to have a statistically significant effect in this model. Overall, the results suggest that while BMI is associated with blood pressure, its effect is modest compared to other factors such as age.
 
 In Model 3, adding a BMI² term did not improve the model — neither the linear nor the squared BMI term is significant (p = 0.59 and p = 0.42, respectively), and the R² barely changes from 25.7% to 25.8%. This suggests the relationship between BMI and blood pressure is essentially linear within the range observed in this dataset, and the more complex polynomial model does not add descriptive value.
-
-
 
 ## Overall Effect
 
