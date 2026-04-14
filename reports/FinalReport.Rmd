@@ -92,12 +92,15 @@ To improve the model, we then extend the specification by including age and smok
 
 We also wanted to check if the relationship between BMI and blood pressure is really a straight line, or if it curves at higher BMI values. To explore this, we added a squared BMI term (BMI²) to the model along with age and smoking. This lets us see whether the effect of BMI on blood pressure gets stronger as BMI increases, or whether a linear model already captures the shape well enough.
 
+Finally, we extend the interaction model by adding a quadratic age term (Age²) to test whether blood pressure rises with age at a constant rate or accelerates at older ages. This specification keeps the BMI × Age interaction from Model 4 while allowing the age-blood pressure relationship to curve rather than follow a straight line.
+
 
 ```{r estimate models, echo=FALSE, message=FALSE, warning=FALSE}
 model_one   <- lm(bp ~ bmi, data = df)
 model_two   <- lm(bp ~ bmi + age + smoking, data = df)
 model_three <- lm(bp ~ bmi + I(bmi^2) + age + smoking, data = df)
 model_four   <- lm(bp ~ bmi * age + smoking, data = df)
+model_five   <- lm(bp ~ bmi * age + smoking + I(age^2), data = df)
 ```
 
 ```{r report_models_table, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
@@ -108,19 +111,20 @@ stargazer(
   model_two,
   model_three,
   model_four,
+  model_five,
   header = FALSE,
   se = list(
     sqrt(diag(vcovHC(model_one))),
     sqrt(diag(vcovHC(model_two))),
     sqrt(diag(vcovHC(model_three))),
-    sqrt(diag(vcovHC(model_four)))
-    
+    sqrt(diag(vcovHC(model_four))),
+    sqrt(diag(vcovHC(model_five)))
   ),
   type = "latex",
   float = FALSE,
   font.size = "scriptsize",
   column.sep.width = "3pt",
-  covariate.labels = c("BMI", "BMI²", "Age", "Smoking", "BMI × Age"),
+  covariate.labels = c("BMI", "BMI²", "Age", "Smoking", "BMI × Age", "Age²"),
   digits = 2,
   omit.stat = c("ser", "f"),
   star.cutoffs = c(0.1, 0.05, 0.01),
@@ -143,6 +147,8 @@ For Model 3, the residual pattern looks very similar to Model 2 — adding BMI²
 
 For Model 4, which includes an interaction between BMI and age, the residuals appear very similar to Model 2. There is no clear improvement or deterioration in the residual patterns, meaning that while the interaction adds flexibility to the model, it does not significantly change the underlying distribution of residuals.
 
+For Model 5, adding the quadratic age term does not noticeably change the residual pattern compared to Models 2 and 4. The residual spread remains similar, and the same mild heteroscedasticity and tail deviations persist, consistent with the other specifications.
+
 
 ## Model Results and Interpretation
 
@@ -154,9 +160,11 @@ In Model 3, adding a BMI² term did not improve the model — neither the linear
 
 In Model 4, including an interaction term between BMI and age shows that the effect of BMI on blood pressure depends on age. The interaction coefficient is negative and statistically significant, indicating that BMI has a stronger association with blood pressure at younger ages and a weaker association at older ages. While the overall model fit remains similar to Model 2, this specification provides insight on how BMI and age jointly relates to blood pressure.
 
+In Model 5, adding a quadratic age term to the interaction model reveals that the age-blood pressure relationship accelerates at older ages. The Age² coefficient is positive and statistically significant (p < 0.001), indicating that blood pressure does not just increase steadily with age but steepens over time. The BMI × Age interaction remains significant and negative, confirming that BMI has a smaller association with blood pressure among older adults. Smoking remains nonsignificant. The adjusted R² increases slightly from 0.2622 in Model 4 to 0.2644, suggesting a modest improvement in explanatory power.
+
 ## Overall Effect
 
-This analysis finds a consistent, positive association between BMI and systolic blood pressure — higher BMI tends to go with higher blood pressure, and this holds even after controlling for age and smoking. However, the effect is modest: BMI alone explains only 1.8% of the variation in blood pressure, while age turns out to be a much stronger predictor. The polynomial model also showed no meaningful curvature, suggesting the relationship is essentially linear. Incorporating an interaction between BMI and age further shows that the strength of the relationship varies across individuals, with BMI having a stronger association with blood pressure at younger ages and a weaker association at older ages. These findings give a clear descriptive picture of how BMI and blood pressure move together in the U.S. adult population.
+This analysis finds a consistent, positive association between BMI and systolic blood pressure — higher BMI tends to go with higher blood pressure, and this holds even after controlling for age and smoking. However, the effect is modest: BMI alone explains only 1.8% of the variation in blood pressure, while age turns out to be a much stronger predictor. The polynomial model also showed no meaningful curvature, suggesting the relationship is essentially linear. Incorporating an interaction between BMI and age further shows that the strength of the relationship varies across individuals, with BMI having a stronger association with blood pressure at younger ages and a weaker association at older ages. Adding a quadratic age term confirms that the age-blood pressure relationship is not constant — it steepens at older ages, meaning blood pressure rises more rapidly later in life. These findings give a clear descriptive picture of how BMI and blood pressure move together in the U.S. adult population.
 
 \newpage
 
@@ -202,7 +210,8 @@ p1 <- make_resid_plot(model_one, "Model 1")
 p2 <- make_resid_plot(model_two, "Model 2")
 p3 <- make_resid_plot(model_three, "Model 3")
 p4 <- make_resid_plot(model_four, "Model 4")
+p5 <- make_resid_plot(model_five, "Model 5")
 
-# Combine into 2x2 layout
-(p1 | p2) / (p3 | p4)
+# Combine into layout
+(p1 | p2) / (p3 | p4) / (p5 | plot_spacer())
 ```
