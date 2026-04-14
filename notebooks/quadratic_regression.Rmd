@@ -1,0 +1,131 @@
+---
+title: "Model 4: Quadratic Regression Extension of the BMI and Blood Pressure Model"
+author: "Ronald Tieu"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(stargazer)
+
+df <- read_csv("../data/processed/nhanes_clean.csv")
+
+head(df)
+summary(df)
+```
+
+```{r}
+model2 <- lm(bp ~ bmi + age + smoking, data = df)
+summary(model2)
+```
+
+```{r}
+model3 <- lm(bp ~ bmi * age + smoking, data = df)
+summary(model3)
+```
+
+```{r}
+model4 <- lm(bp ~ bmi * age + smoking + I(age^2), data = df)
+summary(model4)
+```
+
+```{r}
+model_comp <- tibble(
+  Model = c("Model 2: BMI + Age + Smoking",
+            "Model 3: BMI x Age Interaction + Smoking",
+            "Model 4: BMI x Age + Age^2 + Smoking"),
+  R2 = c(
+    summary(model2)$r.squared,
+    summary(model3)$r.squared,
+    summary(model4)$r.squared
+  ),
+  Adj_R2 = c(
+    summary(model2)$adj.r.squared,
+    summary(model3)$adj.r.squared,
+    summary(model4)$adj.r.squared
+  ),
+  AIC = c(
+    AIC(model2),
+    AIC(model3),
+    AIC(model4)
+  ),
+  BIC = c(
+    BIC(model2),
+    BIC(model3),
+    BIC(model4)
+  ),
+  RSE = c(
+    sigma(model2),
+    sigma(model3),
+    sigma(model4)
+  )
+)
+
+model_comp
+```
+
+```{r}
+anova(model2, model3)
+```
+
+```{r}
+anova(model3, model4)
+```
+
+```{r}
+stargazer(
+  model2, model3, model4,
+  type = "text",
+  title = "Regression Results: Blood Pressure Models",
+  dep.var.labels = "Systolic Blood Pressure",
+  digits = 3
+)
+```
+
+22 - healthy bmi
+
+30 - moderate
+
+30+ - obese
+
+```{r}
+bmi_vals <- c(22, 30, 38)
+
+plot_df <- expand.grid(
+  age = seq(min(df$age, na.rm = TRUE), max(df$age, na.rm = TRUE), length.out = 200),
+  bmi = bmi_vals,
+  smoking = 0
+)
+
+plot_df$bp_hat <- predict(model4, newdata = plot_df)
+plot_df$bmi_group <- factor(plot_df$bmi)
+
+ggplot(df, aes(x = age, y = bp)) +
+  geom_point(alpha = 0.12, color = "steelblue") +
+  geom_line(
+    data = plot_df,
+    aes(x = age, y = bp_hat, color = bmi_group),
+    linewidth = 1.2
+  ) +
+  labs(
+    title = "Quadratic Age Model: Blood Pressure by Age",
+    subtitle = "Predicted blood pressure for BMI 22, 30, and 38 (smoking held constant at 0)",
+    x = "Age",
+    y = "Systolic Blood Pressure",
+    color = "BMI"
+  ) +
+  theme_minimal()
+```
+
+Ali's multiple linear regression model assumes constant effects of BMI and age, while Brett's interaction model allows the BMI-blood pressure relationship to vary with age.
+
+Model 4 extends Brett's specification by testing whether blood pressure rises with age at a constant rate or accelerates at older ages.
+
+The negative `bmi:age` coefficient remains significant, indicating that BMI has a smaller association with blood pressure among older adults. The positive and significant `age^2` term suggests that the age-blood pressure relationship steepens at older ages.
+
+Model fit improves modestly across the sequence, with adjusted `R^2` increasing from `r round(summary(model2)$adj.r.squared, 4)` to `r round(summary(model3)$adj.r.squared, 4)` to `r round(summary(model4)$adj.r.squared, 4)`.
