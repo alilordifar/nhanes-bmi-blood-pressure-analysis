@@ -1,0 +1,237 @@
+---
+title: "Exploring New Variables for BMI-Blood Pressure Model"
+author: "Ronald Tieu"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Purpose
+
+This notebook explores whether adding new NHANES variables improves the
+BMI-blood pressure regression model. We test: sex, race/ethnicity, BP
+medication, physical activity, alcohol use, sodium intake, and an upgraded
+3-level smoking variable. We also switch from a single BP reading to the
+average of available readings.
+
+## 1. Load Data
+
+We start from the cleaned v2 dataset (averaged BP, sex, race, 3-level smoking),
+then join in the additional NHANES files for physical activity, alcohol, sodium,
+and BP medication to test whether they improve the model.
+
+```{r}
+library(tidyverse)
+library(haven)
+library(stargazer)
+
+# Base dataset from cleaned v2
+df_base <- read_csv("../data/processed/nhanes_clean_v2.csv")
+
+# Additional NHANES files for extra variables
+data_path <- "../data/external/"
+paq <- read_xpt(file.path(data_path, "PAQ_J.xpt"))
+alq <- read_xpt(file.path(data_path, "ALQ_J.xpt"))
+dr1 <- read_xpt(file.path(data_path, "DR1TOT_J.xpt"))
+bpq <- read_xpt(file.path(data_path, "BPQ_J.xpt"))
+```
+
+## 2. Merge Extra Variables
+
+```{r}
+df <- df_base %>%
+  inner_join(paq %>% select(SEQN, PAQ605, PAQ650), by = "SEQN") %>%
+  inner_join(alq %>% select(SEQN, ALQ130), by = "SEQN") %>%
+  inner_join(dr1 %>% select(SEQN, DR1TSODI), by = "SEQN") %>%
+  inner_join(bpq %>% select(SEQN, BPQ050A), by = "SEQN")
+
+cat("Merged dataset:", nrow(df), "rows\n")
+```
+
+## 3. Clean and Recode Extra Variables
+
+```{r}
+df_clean <- df %>%
+  mutate(
+    # Rename sex for consistency with this notebook
+    female = sex,
+
+    # Race/ethnicity as factor
+    race = factor(race,
+                  levels = c(3, 1, 2, 4, 6, 7),
+                  labels = c("White", "Mex American", "Other Hispanic",
+                             "Black", "Asian", "Other/Multi")),
+
+    # Smoking already 3-level in v2, just factor it
+    smoking = factor(smoking, levels = c("never", "former", "current")),
+
+    # BP medication: 1 = yes, 0 = no
+    bp_meds = case_when(
+      BPQ050A == 1 ~ 1,
+      BPQ050A == 2 ~ 0,
+      TRUE ~ NA_real_
+    ),
+
+    # Physical activity: 1 = any recreational activity
+    active = case_when(
+      PAQ605 %in% c(7, 9) ~ NA_real_,
+      PAQ650 %in% c(7, 9) ~ NA_real_,
+      PAQ605 == 1 | PAQ650 == 1 ~ 1,
+      TRUE ~ 0
+    ),
+
+    # Alcohol: avg drinks/day (777/999 = refused/don't know)
+    alcohol = ifelse(ALQ130 %in% c(777, 999), NA, ALQ130),
+
+    # Sodium: total mg
+    sodium = DR1TSODI
+  ) %>%
+  select(SEQN, bp, bmi, age, female, race, smoking, bp_meds, active,
+         alcohol, sodium)
+
+cat("After recoding:", nrow(df_clean), "rows\n")
+```
+
+## 4. Missingness Summary
+
+```{r}
+cat("=== Missingness per variable ===\n\n")
+df_clean %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+  mutate(pct_missing = round(100 * n_missing / nrow(df_clean), 1)) %>%
+  print(n = 20)
+```
+
+```{r}
+# Complete cases for the full model
+df_full <- df_clean %>% drop_na()
+cat("\nComplete cases (all variables):", nrow(df_full), "out of", nrow(df_clean), "\n")
+cat("Dropped:", nrow(df_clean) - nrow(df_full), "observations\n")
+```
+
+## 5. Summary Statistics
+
+```{r}
+cat("=== Continuous variables ===\n")
+df_full %>%
+  select(bp, bmi, age, alcohol, sodium) %>%
+  summary()
+
+cat("\n=== Binary/Categorical variables ===\n")
+cat("\nSex:\n"); table(df_full$female)
+cat("\nRace:\n"); table(df_full$race)
+cat("\nSmoking:\n"); table(df_full$smoking)
+cat("\nBP Medication:\n"); table(df_full$bp_meds)
+cat("\nPhysically Active:\n"); table(df_full$active)
+```
+
+## 6. Model Comparison
+
+We build models incrementally to see which variables improve fit.
+
+```{r}
+m1 <- lm(bp ~ bmi, data = df_full)
+m2 <- lm(bp ~ bmi + age + smoking, data = df_full)
+m3 <- lm(bp ~ bmi + age + smoking + female + race + bp_meds, data = df_full)
+m4 <- lm(bp ~ bmi + age + smoking + female + race + bp_meds + active, data = df_full)
+m5 <- lm(bp ~ bmi + age + smoking + female + race + bp_meds + active + alcohol, data = df_full)
+m6 <- lm(bp ~ bmi + age + smoking + female + race + bp_meds + active + alcohol + sodium, data = df_full)
+m7 <- lm(bp ~ bmi * age + smoking + female + race + bp_meds + I(age^2), data = df_full)
+```
+
+```{r results='asis'}
+stargazer(
+  m1, m2, m3, m4, m5, m6, m7,
+  type = "text",
+  title = "Variable Exploration: Incremental Model Comparison",
+  dep.var.labels = "Systolic Blood Pressure (mmHg)",
+  digits = 3,
+  omit.stat = c("f"),
+  column.labels = c("Baseline", "+Age/Smk", "+Sex/Race/Meds",
+                     "+Active", "+Alcohol", "+Sodium", "Interaction"),
+  model.numbers = TRUE
+)
+```
+
+## 7. Fit Comparison Table
+
+```{r}
+models <- list(m1, m2, m3, m4, m5, m6, m7)
+model_names <- c("M1: BMI only",
+                 "M2: + age + smoking(3)",
+                 "M3: + female + race + bp_meds",
+                 "M4: + active",
+                 "M5: + alcohol",
+                 "M6: + sodium",
+                 "M7: interaction + age^2")
+
+comparison <- tibble(
+  Model = model_names,
+  R2 = sapply(models, function(m) round(summary(m)$r.squared, 4)),
+  Adj_R2 = sapply(models, function(m) round(summary(m)$adj.r.squared, 4)),
+  AIC = sapply(models, function(m) round(AIC(m), 1)),
+  BIC = sapply(models, function(m) round(BIC(m), 1)),
+  RSE = sapply(models, function(m) round(sigma(m), 2)),
+  n = sapply(models, function(m) nobs(m))
+)
+
+print(comparison, n = 10, width = Inf)
+```
+
+## 8. Q-Q Plot of Model 5 Residuals
+
+The final report notes that residuals are right-skewed. This Q-Q plot confirms it: the upper quantiles pull away from the reference line, indicating heavier right tails than a normal distribution.
+
+```{r fig.width=5, fig.height=4}
+library(here)
+
+# Rebuild the confirmation set to match the report
+data_path <- here("data/external/")
+demo <- read_xpt(file.path(data_path, "DEMO_J.xpt"))
+bmx  <- read_xpt(file.path(data_path, "BMX_J.xpt"))
+bpx  <- read_xpt(file.path(data_path, "BPX_J.xpt"))
+smq  <- read_xpt(file.path(data_path, "SMQ_J.xpt"))
+
+df_raw <- demo %>% select(SEQN, RIDAGEYR, RIAGENDR, RIDRETH3) %>%
+  inner_join(bmx %>% select(SEQN, BMXBMI), by = "SEQN") %>%
+  inner_join(bpx %>% select(SEQN, BPXSY1, BPXSY2, BPXSY3), by = "SEQN") %>%
+  inner_join(smq %>% select(SEQN, SMQ020, SMQ040), by = "SEQN")
+
+df_raw <- df_raw %>%
+  mutate(
+    bp = rowMeans(select(., BPXSY1, BPXSY2, BPXSY3), na.rm = TRUE),
+    bp = ifelse(is.nan(bp), NA, bp),
+    bmi = BMXBMI, age = RIDAGEYR,
+    sex = ifelse(RIAGENDR == 2, 1, 0),
+    race = factor(RIDRETH3, levels = c(3,1,2,4,6,7),
+                  labels = c("White","Mex American","Other Hispanic","Black","Asian","Other/Multi")),
+    smoking = case_when(
+      SMQ020 == 2 ~ "never", SMQ020 == 1 & SMQ040 == 3 ~ "former",
+      SMQ020 == 1 & SMQ040 %in% c(1,2) ~ "current", TRUE ~ NA_character_),
+    smoking = factor(smoking, levels = c("never","former","current"))
+  ) %>% select(SEQN, bp, bmi, age, sex, race, smoking) %>% drop_na()
+
+set.seed(42)
+split_idx <- sample(seq_len(nrow(df_raw)), size = floor(nrow(df_raw) * 0.30))
+df_confirm <- df_raw[-split_idx, ]
+
+model_five <- lm(bp ~ bmi * age + smoking + sex + race + I(age^2), data = df_confirm)
+
+qqnorm(resid(model_five), main = "Q-Q Plot: Model 5 Residuals (Confirmation Set)",
+       pch = 20, cex = 0.5, col = "#2C7FB8")
+qqline(resid(model_five), col = "#D95F0E", lwd = 2)
+```
+
+## 9. Key Takeaways
+
+Based on the model comparison above, we can determine:
+
+- Which variables meaningfully increase R-squared
+- Which variables are statistically significant
+- Whether the sample size drops too much when including all variables
+- Whether alcohol and sodium are worth the added complexity
+- How the 3-level smoking variable compares to the old binary version

@@ -1,0 +1,219 @@
+---
+title: "Test: Adding Sex, Race, and 3-Level Smoking to Original Models"
+author: "Ronald Tieu"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Purpose
+
+Test whether adding sex, race/ethnicity, and upgraded 3-level smoking improves the original models — without losing sample size.
+
+## 1. Build Dataset
+
+```{r}
+library(tidyverse)
+library(stargazer)
+
+# Load from the cleaned v2 dataset (averaged BP, sex, race, 3-level smoking)
+df_v2 <- read_csv("../data/processed/nhanes_clean_v2.csv")
+
+# Recode for modeling
+df_clean <- df_v2 %>%
+  mutate(
+    race = factor(race,
+                  levels = c(3, 1, 2, 4, 6, 7),
+                  labels = c("White", "Mex American", "Other Hispanic",
+                             "Black", "Asian", "Other/Multi")),
+    smoking3 = factor(smoking, levels = c("never", "former", "current")),
+    # Keep binary smoking for old vs new comparison
+    smoking_bin = smoking_bin
+  )
+
+cat("Final sample size:", nrow(df_clean), "\n")
+cat("Age range:", min(df_clean$age), "-", max(df_clean$age), "\n")
+cat("Mean age:", round(mean(df_clean$age), 1), "\n")
+```
+
+## 2. Exploratory Data Analysis
+
+### Summary Statistics
+
+```{r}
+cat("=== Continuous Variables ===\n")
+df_clean %>%
+  select(bp, bmi, age) %>%
+  summary()
+
+cat("\n=== Categorical Variables ===\n")
+cat("\nSex (0=Male, 1=Female):\n")
+table(df_clean$sex) %>% print()
+cat("\nRace/Ethnicity:\n")
+table(df_clean$race) %>% print()
+cat("\nSmoking Status:\n")
+table(df_clean$smoking3) %>% print()
+```
+
+### Outcome Variable: Systolic Blood Pressure Distribution
+
+```{r, fig.width=6, fig.height=3.5}
+ggplot(df_clean, aes(x = bp)) +
+  geom_histogram(bins = 40, fill = "steelblue", alpha = 0.7, color = "white") +
+  geom_vline(xintercept = mean(df_clean$bp), color = "red", linetype = "dashed", linewidth = 0.8) +
+  labs(title = "Distribution of Systolic Blood Pressure",
+       subtitle = "Red dashed line = mean",
+       x = "Systolic Blood Pressure (mmHg)", y = "Count") +
+  theme_minimal()
+```
+
+### Predictor Distributions: BMI and Age
+
+```{r, fig.width=8, fig.height=3.5}
+p_bmi <- ggplot(df_clean, aes(x = bmi)) +
+  geom_histogram(bins = 40, fill = "darkorange", alpha = 0.7, color = "white") +
+  labs(title = "Distribution of BMI", x = "BMI", y = "Count") +
+  theme_minimal()
+
+p_age <- ggplot(df_clean, aes(x = age)) +
+  geom_histogram(bins = 40, fill = "darkgreen", alpha = 0.7, color = "white") +
+  labs(title = "Distribution of Age", x = "Age (years)", y = "Count") +
+  theme_minimal()
+
+library(patchwork)
+p_bmi | p_age
+```
+
+### Bivariate: BP vs BMI and BP vs Age
+
+```{r, fig.width=8, fig.height=3.5}
+p_bmi_bp <- ggplot(df_clean, aes(x = bmi, y = bp)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "BP vs BMI", x = "BMI", y = "Systolic BP (mmHg)") +
+  theme_minimal()
+
+p_age_bp <- ggplot(df_clean, aes(x = age, y = bp)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "BP vs Age", x = "Age (years)", y = "Systolic BP (mmHg)") +
+  theme_minimal()
+
+p_bmi_bp | p_age_bp
+```
+
+### BP by Sex
+
+```{r, fig.width=5, fig.height=3.5}
+ggplot(df_clean, aes(x = factor(sex, labels = c("Male", "Female")), y = bp)) +
+  geom_boxplot(fill = c("#4A90D9", "#D94A7A"), alpha = 0.7) +
+  labs(title = "Systolic Blood Pressure by Sex",
+       x = "Sex", y = "Systolic BP (mmHg)") +
+  theme_minimal()
+```
+
+### BP by Race/Ethnicity
+
+```{r, fig.width=7, fig.height=4}
+ggplot(df_clean, aes(x = reorder(race, bp, FUN = median), y = bp, fill = race)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Systolic Blood Pressure by Race/Ethnicity",
+       x = "Race/Ethnicity", y = "Systolic BP (mmHg)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 15, hjust = 1))
+```
+
+### BP by Smoking Status
+
+```{r, fig.width=5, fig.height=3.5}
+ggplot(df_clean, aes(x = smoking3, y = bp, fill = smoking3)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(title = "Systolic Blood Pressure by Smoking Status",
+       x = "Smoking Status", y = "Systolic BP (mmHg)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Correlation Matrix
+
+```{r, fig.width=5, fig.height=4}
+cor_data <- df_clean %>%
+  select(bp, bmi, age, sex) %>%
+  cor()
+
+cor_long <- as.data.frame(as.table(cor_data)) %>%
+  rename(Var1 = Var1, Var2 = Var2, Correlation = Freq)
+
+ggplot(cor_long, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile() +
+  geom_text(aes(label = round(Correlation, 2)), size = 4) +
+  scale_fill_gradient2(low = "#D73027", mid = "white", high = "#4575B4", midpoint = 0) +
+  labs(title = "Correlation Matrix") +
+  theme_minimal() +
+  theme(axis.title = element_blank())
+```
+
+------------------------------------------------------------------------
+
+## 3. Compare: Original Models vs New Models
+
+```{r}
+# Original Models (binary smoking, single BP reading)
+old_m1 <- lm(bp ~ bmi, data = df_clean)
+old_m2 <- lm(bp ~ bmi + age + smoking_bin, data = df_clean)
+old_m3 <- lm(bp ~ bmi + I(bmi^2) + age + smoking_bin, data = df_clean)
+old_m4 <- lm(bp ~ bmi * age + smoking_bin, data = df_clean)
+old_m5 <- lm(bp ~ bmi * age + smoking_bin + I(age^2), data = df_clean)
+
+# New Models (3-level smoking + sex + race)
+new_m1 <- lm(bp ~ bmi, data = df_clean)
+new_m2 <- lm(bp ~ bmi + age + smoking3 + sex + race, data = df_clean)
+new_m3 <- lm(bp ~ bmi + I(bmi^2) + age + smoking3 + sex + race, data = df_clean)
+new_m4 <- lm(bp ~ bmi * age + smoking3 + sex + race, data = df_clean)
+new_m5 <- lm(bp ~ bmi * age + smoking3 + sex + race + I(age^2), data = df_clean)
+```
+
+## 3. Side-by-Side R² Comparison
+
+```{r}
+old_models <- list(old_m1, old_m2, old_m3, old_m4, old_m5)
+new_models <- list(new_m1, new_m2, new_m3, new_m4, new_m5)
+model_names <- c("M1: BMI only",
+                 "M2: + age + smoking",
+                 "M3: + BMI²",
+                 "M4: BMI × Age interaction",
+                 "M5: + Age²")
+
+comparison <- tibble(
+  Model = model_names,
+  Old_R2 = sapply(old_models, function(m) round(summary(m)$r.squared, 4)),
+  Old_AdjR2 = sapply(old_models, function(m) round(summary(m)$adj.r.squared, 4)),
+  New_R2 = sapply(new_models, function(m) round(summary(m)$r.squared, 4)),
+  New_AdjR2 = sapply(new_models, function(m) round(summary(m)$adj.r.squared, 4)),
+  R2_change = sapply(seq_along(old_models), function(i) {
+    round(summary(new_models[[i]])$adj.r.squared - summary(old_models[[i]])$adj.r.squared, 4)
+  })
+)
+
+print(comparison, width = Inf)
+```
+
+## 4. Full Coefficient Table for Best New Model
+
+```{r results='asis'}
+stargazer(
+  old_m2, new_m2, old_m5, new_m5,
+  type = "text",
+  title = "Old vs New: Key Model Comparisons",
+  dep.var.labels = "Systolic Blood Pressure (mmHg)",
+  column.labels = c("Old M2", "New M2", "Old M5", "New M5"),
+  digits = 3,
+  omit.stat = c("f")
+)
+```

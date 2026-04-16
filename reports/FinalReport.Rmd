@@ -1,9 +1,31 @@
 ---
-title: "BMI and Blood Pressure: A Descriptive Analysis"
+title: |
+  | How Does BMI Relate to Systolic Blood Pressure Across Age Groups?
+  | A Descriptive Analysis Using NHANES 2017-2018
 author: "Brett Anwar, Ali Lordifar, Ronald Tieu, Edward Cho"
-output: pdf_document
 date: "2026-04-11"
+output:
+  pdf_document:
+    latex_engine: pdflatex
+fontsize: 10pt
+geometry: margin=0.75in
+header-includes:
+  - \usepackage{setspace}
+  - \setstretch{1.0}
+  - \usepackage{titlesec}
+  - \titlespacing*{\section}{0pt}{6pt}{2pt}
+  - \titlespacing*{\subsection}{0pt}{4pt}{2pt}
+  - \setlength{\parskip}{3pt}
+  - \setlength{\parindent}{1.5em}
+  - \usepackage{indentfirst}
+  - \usepackage{hyperref}
 ---
+
+\begin{center}
+\textbf{Repository:} \href{https://github.com/alilordifar/nhanes-bmi-blood-pressure-analysis}{github.com/alilordifar/nhanes-bmi-blood-pressure-analysis}
+\end{center}
+
+\newpage
 
 ```{r setup, include=FALSE}
 options(repos = c(CRAN = "https://cloud.r-project.org"))
@@ -14,94 +36,185 @@ library(here)
 if (!require(patchwork)) install.packages("patchwork")
 library(patchwork)
 library(tidyverse)
+library(haven)
 library(stargazer)
 library(sandwich)
-library(here)
 
-df <- read_csv(here("data/processed/nhanes_clean.csv"))
+# Step 1: Load raw NHANES files
+data_path <- here("data/external/")
+demo <- read_xpt(file.path(data_path, "DEMO_J.xpt"))
+bmx  <- read_xpt(file.path(data_path, "BMX_J.xpt"))
+bpx  <- read_xpt(file.path(data_path, "BPX_J.xpt"))
+smq  <- read_xpt(file.path(data_path, "SMQ_J.xpt"))
+
+# Step 2: Merge on SEQN
+df_raw <- demo %>% select(SEQN, RIDAGEYR, RIAGENDR, RIDRETH3) %>%
+  inner_join(bmx %>% select(SEQN, BMXBMI), by = "SEQN") %>%
+  inner_join(bpx %>% select(SEQN, BPXSY1, BPXSY2, BPXSY3), by = "SEQN") %>%
+  inner_join(smq %>% select(SEQN, SMQ020, SMQ040), by = "SEQN")
+
+# Step 3: Set up outcome and predictor variables
+df_raw <- df_raw %>%
+  mutate(
+    bp = rowMeans(select(., BPXSY1, BPXSY2, BPXSY3), na.rm = TRUE),
+    bp = ifelse(is.nan(bp), NA, bp),
+    bmi = BMXBMI,
+    age = RIDAGEYR,
+    sex = ifelse(RIAGENDR == 2, 1, 0),
+    race = factor(RIDRETH3,
+                  levels = c(3, 1, 2, 4, 6, 7),
+                  labels = c("White", "Mex American", "Other Hispanic",
+                             "Black", "Asian", "Other/Multi")),
+    smoking = case_when(
+      SMQ020 == 2 ~ "never",
+      SMQ020 == 1 & SMQ040 == 3 ~ "former",
+      SMQ020 == 1 & SMQ040 %in% c(1, 2) ~ "current",
+      TRUE ~ NA_character_
+    ),
+    smoking = factor(smoking, levels = c("never", "former", "current")),
+    smoking_bin = case_when(
+      SMQ020 == 1 ~ 1, SMQ020 == 2 ~ 0, TRUE ~ NA_real_
+    )
+  ) %>%
+  select(SEQN, bp, bmi, age, sex, race, smoking, smoking_bin)
+
+# Step 4: Drop missing values
+n_raw      <- nrow(df_raw)
+n_lost_bp  <- sum(is.na(df_raw$bp))
+n_lost_bmi <- sum(is.na(df_raw$bmi))
+n_lost_smq <- sum(is.na(df_raw$smoking))
+df         <- df_raw %>% drop_na()
+n_clean    <- nrow(df)
+n_dropped  <- n_raw - n_clean
+
+# Step 5: Exploration / Confirmation split (30/70)
+set.seed(42)
+split_idx  <- sample(seq_len(n_clean), size = floor(n_clean * 0.30))
+df_explore <- df[split_idx, ]
+df_confirm <- df[-split_idx, ]
+n_explore  <- nrow(df_explore)
+n_confirm  <- nrow(df_confirm)
+
+# Step 6: Fit models on confirmation set
+model_one   <- lm(bp ~ bmi, data = df_confirm)
+model_two   <- lm(bp ~ bmi + age + smoking_bin, data = df_confirm)
+model_three <- lm(bp ~ bmi + I(bmi^2) + age + smoking_bin, data = df_confirm)
+model_four  <- lm(bp ~ bmi * age + smoking_bin, data = df_confirm)
+model_five  <- lm(bp ~ bmi * age + smoking + sex + race + I(age^2), data = df_confirm)
+
+# Step 7: Diagnostics
+library(lmtest)
+bp_test <- bptest(model_five)
+
+# Overlap count for missingness
+n_overlap <- sum(rowSums(is.na(df_raw[, c("bp", "bmi", "smoking")])) > 1)
+
+# Total NHANES participants
+n_total_nhanes <- nrow(demo)
 ```
 
 ## Introduction
 
-Body mass index and blood pressure are two widely used health indicators that are closely linked to cardiovascular risk. Understanding how these measures relate to each other is important for clinicians, public health researchers, and policymakers who aim to better understand patterns in population health. This project focuses on a descriptive question: what is the relationship between body mass index and systolic blood pressure? Rather than making a causal claim or building a predictive model, the goal is to describe the strength and shape of the association between these variables in a large public health dataset. This is particularly relevant because excess body weight is often associated with hypertension, and a clear descriptive analysis can show how blood pressure tends to vary across individuals with different BMI levels.
+Nearly half of U.S. adults have hypertension, and about 40% are classified as obese (NCHS, 2024), two conditions behind more than 900,000 cardiovascular deaths recorded in the country each year (AHA, 2025). These two risk factors frequently co-occur, but how does the association actually play out in a large national survey? This project focuses on a descriptive question: what is the relationship between body mass index and systolic blood pressure? We focus on systolic pressure specifically because it tends to be the stronger predictor of cardiovascular risk, especially as people age. Age itself may shape the BMI-blood pressure relationship too since arteries stiffen over time, though we don't try to isolate that here. We are not making a causal claim. We describe the strength and shape of the association between these variables in a large public health dataset. Excess body weight is often associated with hypertension, and a clear descriptive analysis can show how blood pressure tends to vary across individuals with different BMI levels. A descriptive picture like this matters because it shows which groups tend to have higher blood pressure and where the association is strongest.
 
 ## Description of Data Source
 
-The analysis uses data from the National Health and Nutrition Examination Survey (NHANES), a publicly available dataset collected by the Centers for Disease Control and Prevention. NHANES combines survey responses, medical examinations, and laboratory data to assess the health and nutritional status of individuals in the United States. The unit of observation in this study is an individual participant. NHANES is well suited for this analysis because it is cross-sectional, includes a large number of observations, and provides directly measured variables for both body mass index and systolic blood pressure. These features make it appropriate for a descriptive regression analysis of the relationship between BMI and blood pressure.
+We use data from the National Health and Nutrition Examination Survey (NHANES), the CDC's ongoing study designed to assess the health of the non-institutionalized civilian population of the United States. The survey combines in-home interviews with standardized physical exams and lab work conducted at mobile examination centers. Each row in the dataset is one participant. We pull four public 2017 to 2018 files: demographics (DEMO_J), body measures (BMX_J), blood pressure (BPX_J), and smoking (SMQ_J). BMI came from measured height and weight during the exam, and blood pressure was taken in a seated position after five minutes of rest, with up to three consecutive readings averaged, so neither variable relies on self-report. NHANES uses a multistage probability design that oversamples Black and Hispanic adults, older adults, and low-income individuals, and it surveys participants of all ages, though blood pressure exams are limited to those eight and older. We stay with the 2017 to 2018 cycle because it is the last pre-COVID release with complete blood pressure exam data. The full cycle includes about `r format(n_total_nhanes, big.mark=",")` participants; 5,176 remain after our merge and complete-case screen. Because we do not apply survey weights, our regression coefficients describe patterns within this analytic sample and should not be interpreted as nationally representative estimates.
 
 ## Data Wrangling
 
-The final dataset was created by combining multiple NHANES component files, including demographic data, body measurements, blood pressure readings, and smoking-related variables. These files were merged using the respondent identifier SEQN, which uniquely links individuals across datasets. After merging, only the variables relevant to the analysis were retained: age, body mass index, systolic blood pressure, and smoking status. Observations with missing values in any of these variables were removed to ensure consistency in the regression analysis. The smoking variable was also recoded into a binary indicator to improve interpretability. The resulting dataset contains one observation per participant and is structured for descriptive regression analysis.
+We joined the four NHANES files on respondent ID (`SEQN`). That gave us 6,401 people with records in all four sources. We averaged the available systolic readings, kept BMI and age in their original units, coded sex as a binary indicator, recoded race/ethnicity to six groups, and recoded smoking to never, former, or current. Then we used complete case analysis. Of the 6,401 merged observations, 346 were missing blood pressure, 107 missing BMI, and 868 missing smoking status; `r n_overlap` individuals were missing more than one variable, so the unique count dropped was `r n_dropped`, leaving 5,176 complete cases. Most of the blood pressure and BMI missingness came from people who did not complete the exam. We then split the complete cases at random into 1,552 exploration observations and 3,624 confirmation observations.
 
 ## Operationalization
 
-BMI is represented by the NHANES body mass index variable (BMXBMI), systolic blood pressure by the first systolic reading (BPXSY1), age by years at screening (RIDAGEYR), and smoking by SMQ020, which is recoded into a binary ever-smoker indicator based on whether the respondent reported smoking at least 100 cigarettes in their lifetime. In the cleaned dataset used across the team’s regression analyses (baseline linear, interaction, polynomial BMI, and quadratic age models), BMI, blood pressure, and age are kept continuous. This allows us to model how blood pressure changes across their full range instead of grouping them into categories. After merging the NHANES component files by respondent ID, the linked sample contained 6,401 observations; restricting the analysis to complete cases produced a final sample of 4,833, dropping 107 observations with missing BMI, 726 with missing systolic blood pressure, and 868 with missing smoking information. The main limitations are that the smoking variable reflects lifetime smoking history rather than current smoking behavior, and blood pressure is based on a single systolic reading rather than an average across readings.
+Our outcome is systolic blood pressure, averaged across the three exam readings (`BPXSY1`, `BPXSY2`, `BPXSY3`) to reduce noise from the first reading, which tends to run high. We picked systolic over diastolic or mean arterial pressure because the literature ties it more consistently to cardiovascular risk. The main predictor is `BMXBMI`. We believe that waist circumference or DXA body fat would capture adiposity better, but BMI is what every prior study reports, so using it keeps our results comparable. Age (`RIDAGEYR`) and sex (`RIAGENDR`) enter the model directly, age as continuous to avoid throwing away information through binning. We include race/ethnicity (`RIDRETH3`) not as a biological variable but as a proxy for the socioeconomic and environmental factors that track with both BMI and blood pressure. Smoking status is operationalized two ways. Models 2 through 4 use a binary ever-smoker indicator from `SMQ020` (smoked at least 100 cigarettes in lifetime, yes or no) to stay consistent with the team's earlier specifications. Model 5 upgrades to a three-level factor combining `SMQ020` and `SMQ040` into never, former, and current smoker, because former and current smokers sit at different points on the cardiovascular risk spectrum and the binary version masked a significant difference between them. After merging on `SEQN` and dropping 346 observations missing blood pressure, 107 missing BMI, and 868 missing smoking, we retain 5,176 complete cases. A few limitations are worth flagging: BMI conflates muscle and fat, smoking is self reported with no pack-year detail, and all blood pressure readings come from a single visit, so we are working with a snapshot of something that fluctuates throughout the day.
 
 ## Data Visualization
 
-```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=5, fig.height=3, fig.align='center'}
+Figure 1a plots BMI against systolic blood pressure, colored by age group. The younger groups have visibly steeper smoothers than the oldest group, which is why we test a BMI by age interaction later in the report. Figure 1b overlays the fitted mean from Model 5 for a median age White male never smoker. The line rises with BMI, but the point cloud stays wide at every part of the x axis, so the figure also makes clear that BMI explains only a small share of the total variation.
 
-library(tidyverse)
-library(ggplot2)
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=2.4, fig.align='center'}
+library(patchwork)
 
-# Load data
-df <- read_csv("../data/processed/nhanes_clean.csv")
-
-# Create age groups
-df_plot <- df %>%
+# exploratory visualization
+df_plot <- df_explore %>%
   mutate(
     age_group = case_when(
-      age < 18 ~ "0-17",
       age < 35 ~ "18-34",
       age < 55 ~ "35-54",
       TRUE ~ "55+"
     ),
-    age_group = factor(age_group, levels = c("0-17", "18-34", "35-54", "55+"))
+    age_group = factor(age_group, levels = c("18-34", "35-54", "55+"))
   )
 
-# Plot
-ggplot(df_plot, aes(x = bmi, y = bp, color = age_group)) +
-  geom_point(alpha = 0.10, size = 0.8) +
-  geom_smooth(method = "loess", se = FALSE, linewidth = 1.2) +
+# Figure 1a: BMI vs BP by age group
+p1a <- ggplot(df_plot, aes(x = bmi, y = bp, color = age_group)) +
+  geom_point(alpha = 0.10, size = 0.5) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 1) +
   scale_color_brewer(palette = "Set2") +
   labs(
-    title = "Figure 1: BMI and Blood Pressure by Age Group",
+    title = "Figure 1a: BP vs BMI by Age Group",
     x = "Body Mass Index (BMI)",
-    y = "Systolic Blood Pressure (mmHg)",
+    y = "Systolic BP (mmHg)",
     color = "Age Group"
   ) +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 9) +
   theme(
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(size = 11),
+    plot.title = element_text(face = "bold", size = 10),
     axis.title = element_text(face = "bold"),
-    legend.position = "right",
-    legend.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold", size = 7),
+    legend.text = element_text(size = 7),
+    legend.key.size = unit(0.4, "cm"),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(5.5, 8, 5.5, 5.5)
   )
-```
-**Figure 1:** Relationship between BMI and systolic blood pressure. Points represent individual observations colored by age group. The smoothed lines highlight how the relationship varies across age groups, with a strong correlation for the youngest age group and almost no correlation for the oldest. 
 
+# Figure 1b: BMI vs BP with Model 5 predicted line overlaid
+# explore - scatter from df_explore; confirmation - prediction from model_five
+bmi_grid <- data.frame(
+  bmi     = seq(min(df_explore$bmi), max(df_explore$bmi), length.out = 200),
+  age     = median(df_confirm$age),
+  sex     = 0,
+  race    = factor("White", levels = levels(df_confirm$race)),
+  smoking = factor("never", levels = c("never", "former", "current"))
+)
+preds <- predict(model_five, newdata = bmi_grid, interval = "confidence")
+bmi_grid$pred_bp <- preds[, "fit"]
+bmi_grid$ci_lo   <- preds[, "lwr"]
+bmi_grid$ci_hi   <- preds[, "upr"]
+
+p1b <- ggplot() +
+  geom_point(data = df_explore, aes(x = bmi, y = bp),
+             color = "grey70", alpha = 0.15, size = 0.5) +
+  geom_ribbon(data = bmi_grid, aes(x = bmi, ymin = ci_lo, ymax = ci_hi),
+              fill = "#D55E00", alpha = 0.2) +
+  geom_line(data = bmi_grid, aes(x = bmi, y = pred_bp),
+            color = "#D55E00", linewidth = 1.2) +
+  labs(
+    title = "Figure 1b: Model 5 Fitted Mean",
+    x = "Body Mass Index (BMI)",
+    y = "Systolic BP (mmHg)"
+  ) +
+  theme_minimal(base_size = 9) +
+  theme(
+    plot.title = element_text(face = "bold", size = 10),
+    axis.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(5.5, 5.5, 5.5, 8)
+  )
+
+(p1a | p1b) + plot_layout(guides = "collect", widths = c(1, 1)) & theme(legend.position = "bottom")
+```
+
+**Figure 1a:** BMI and systolic blood pressure colored by age group (exploration set, n = `r n_explore`). The younger age groups have steeper loess lines than the oldest group, which suggests that the BMI slope changes with age.
+
+**Figure 1b:** BMI and systolic blood pressure (exploration set) with the Model 5 fitted mean and 95% confidence band overlaid for a median-age White male who never smoked. The fitted mean slopes upward, but the cloud around it remains wide.
 
 ## Model Specification
 
-We begin with a simple linear regression model that examines the relationship between body mass index and systolic blood pressure. In this specification, systolic blood pressure is modeled as a function of BMI alone. The purpose of this model is to establish a baseline understanding of the association between these two variables without adjusting for additional factors.
+Table 1 shows the five specifications we use, from BMI alone to the full interaction model with age squared, smoking category, sex, and race/ethnicity. The point of the sequence is to watch what happens to the BMI slope as we add basic controls, a curvature check, and an age interaction.
 
-To improve the model, we then extend the specification by including age and smoking status as additional explanatory variables. These variables are included because they are known to influence blood pressure and may also be correlated with BMI. By adding these controls, the extended model provides a more accurate description of the relationship between BMI and blood pressure while accounting for potential confounding factors.
-
-
-We also wanted to check if the relationship between BMI and blood pressure is really a straight line, or if it curves at higher BMI values. To explore this, we added a squared BMI term (BMI²) to the model along with age and smoking. This lets us see whether the effect of BMI on blood pressure gets stronger as BMI increases, or whether a linear model already captures the shape well enough.
-
-Finally, we extend the interaction model by adding a quadratic age term (Age²) to test whether blood pressure rises with age at a constant rate or accelerates at older ages. This specification keeps the BMI × Age interaction from Model 4 while allowing the age-blood pressure relationship to curve rather than follow a straight line.
-
-
-```{r estimate models, echo=FALSE, message=FALSE, warning=FALSE}
-model_one   <- lm(bp ~ bmi, data = df)
-model_two   <- lm(bp ~ bmi + age + smoking, data = df)
-model_three <- lm(bp ~ bmi + I(bmi^2) + age + smoking, data = df)
-model_four   <- lm(bp ~ bmi * age + smoking, data = df)
-model_five   <- lm(bp ~ bmi * age + smoking + I(age^2), data = df)
-```
 
 ```{r report_models_table, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 
@@ -122,96 +235,139 @@ stargazer(
   ),
   type = "latex",
   float = FALSE,
-  font.size = "scriptsize",
+  font.size = "tiny",
+  single.row = TRUE,
   column.sep.width = "3pt",
-  covariate.labels = c("BMI", "BMI²", "Age", "Smoking", "Age²", "BMI × Age"),
+  covariate.labels = c("BMI", "BMI\\textsuperscript{2}", "Age",
+                        "Smoking (binary)", "Former Smoker", "Current Smoker",
+                        "Sex (Female)", "Race: Mex American", "Race: Other Hispanic",
+                        "Race: Black", "Race: Asian", "Race: Other/Multi",
+                        "Age\\textsuperscript{2}", "BMI $\\times$ Age"),
   digits = 2,
   omit.stat = c("ser", "f"),
-  star.cutoffs = c(0.1, 0.05, 0.01),
   title = "Regression Results: BMI and Systolic Blood Pressure",
   dep.var.labels = "Systolic Blood Pressure (mmHg)"
 )
 cat("\n\\end{center}")
 ```
 
-
 ## Model Assumptions
 
-The assumptions of the linear regression models were evaluated using standard residual diagnostics for both the simple model (BMI only) and the extended model including age and smoking. In both specifications, the residuals versus fitted values plots show that residuals are generally centered around zero without strong nonlinear patterns, suggesting that the linearity assumption is reasonable. However, there is some evidence of increasing spread in the residuals at higher fitted values, indicating mild heteroscedasticity.
+We evaluate five key OLS assumptions below. Residual diagnostics look similar across Models 2 through 5, so adding polynomial, interaction, and demographic terms does not seem to introduce new violations.
 
-The distribution of residuals appears approximately normal in both models. The histograms show a roughly bell-shaped distribution, and the Q-Q plots indicate that residuals closely follow the theoretical normal line in the central region, with some deviations in the tails. These deviations suggest that normality is not perfectly satisfied, but given the large sample size, they are unlikely to substantially affect the validity of the estimates.
+1. **IID (Independent and Identically Distributed).** NHANES uses a multi-stage clustered design: it first samples primary sampling units (PSUs), then households within PSUs, then individuals within households. This structure means observations within the same PSU are not independent because residents share local environmental, economic, and healthcare access factors that jointly influence blood pressure. Oversampling of certain racial/ethnic groups further means the observations are not identically distributed. Together, these features violate the IID assumption in a way we cannot fix post hoc without the survey design variables. The practical consequence is twofold. First, because our OLS standard errors ignore within-cluster correlation, they are almost certainly too small, making confidence intervals too narrow and p-values too optimistic. Second, because we do not apply sampling weights, point estimates reflect the composition of the analytic sample rather than the U.S. adult population that NHANES is designed to represent. A survey-weighted analysis such as `svyglm` with the survey design variables would address both problems. We flag this as the most serious limitation of our analysis.
 
-Comparing the two models, the extended model shows a slight improvement in residual behavior, with reduced spread and better overall fit. This suggests that including age helps explain additional variation in blood pressure. 
+2. **Linear Conditional Expectation.** The residuals-vs-fitted plots for all five models (Appendix) show the loess smoother tracking close to zero across the fitted range, which is our main evidence for approximate linearity. The quadratic BMI term in Model 3 (p = `r round(summary(model_three)$coefficients["I(bmi^2)", "Pr(>|t|)"], 3)`) reaches statistical significance on the confirmation set, but the R² improvement is negligible (`r round(summary(model_two)$r.squared, 3)` to `r round(summary(model_three)$r.squared, 3)`), and the term was not significant during exploration. We treat the linearity assumption as approximately satisfied, but it does not prove that the relationship is perfectly linear. Some mild curvature is visible at the extremes, where the data are sparse, so we treat this assumption as approximate rather than fully satisfied. If the true relationship curves at extreme BMI values, our linear specification would produce biased predictions in those regions while remaining reasonable in the interior of the data.
 
-For Model 3, the residual pattern looks very similar to Model 2 — adding BMI² did not meaningfully change the distribution of residuals or reduce the spread, which lines up with the finding that the BMI² term was not statistically significant. Overall, while some assumptions are only approximately satisfied, the models provide a reasonable and credible descriptive approximation of the relationship between BMI and blood pressure.
+3. **No Perfect Collinearity.** Model 5 includes BMI, Age, BMI $\times$ Age, and Age$^2$, which are mechanically correlated with their component terms. This multicollinearity inflates standard errors on individual coefficients, making it harder to isolate each term's contribution, but it does not constitute perfect collinearity and does not bias the coefficient estimates themselves. We are not entirely sure how much this matters in practice given our sample size, but joint F-tests on groups of related terms remain valid either way.
 
-For Model 4, which includes an interaction between BMI and age, the residuals appear very similar to Model 2. There is no clear improvement or deterioration in the residual patterns, meaning that while the interaction adds flexibility to the model, it does not significantly change the underlying distribution of residuals.
+4. **Homoskedastic Errors.** The residuals-vs-fitted plots (Appendix) show a visible fan shape: residual spread is wider at higher fitted values across all five models. A Breusch-Pagan test confirms significant heteroskedasticity (BP = `r round(bp_test$statistic, 2)`, p < 0.001). When errors are heteroskedastic, default OLS standard errors are biased (typically too small where variance is high), which throws off confidence intervals and hypothesis tests. We address this by reporting heteroskedasticity-robust (HC) standard errors throughout. Robust SEs correct the variance estimates so that inference is reliable in large samples, but they do not change the point estimates or eliminate the heteroskedasticity itself. We could improve efficiency further with weighted least squares, but robust SEs are the more common and conservative choice here.
 
-For Model 5, adding the quadratic age term does not noticeably change the residual pattern compared to Models 2 and 4. The residual spread remains similar, and the same mild heteroscedasticity and tail deviations persist, consistent with the other specifications.
-
+5. **Normally Distributed Errors.** The residuals are right-skewed, as visible in the positive tail of the residuals-vs-fitted plots (Appendix). Strict normality therefore does not hold. But with $n$ = `r nrow(df_confirm)` observations, the central limit theorem ensures that coefficient estimates and their robust standard errors are approximately normal under mild regularity conditions. So we still trust the hypothesis tests for the slope coefficients. The main consequence of non-normality at this sample size is for prediction intervals rather than coefficient inference: individual-level prediction intervals based on a normal assumption will undercover in the right tail, where blood pressure values are higher than the symmetric interval expects. This concern is less consequential than the design-based independence issue above.
 
 ## Model Results and Interpretation
 
-The simple linear regression model shows a positive and statistically significant relationship between body mass index and systolic blood pressure. The estimated coefficient for BMI indicates that a one-unit increase in BMI is associated with an average increase of approximately 0.36 mmHg in systolic blood pressure. While this relationship is statistically significant, the magnitude of the effect is relatively small, suggesting that BMI alone has limited practical impact on blood pressure. This is further supported by the low R-squared value of approximately 0.018, indicating that BMI explains only a small fraction of the variation in blood pressure.
+All results below are estimated on the confirmation set (n = 3,624); the patterns mirror what we observed during exploration. The simple linear regression model shows a positive and statistically significant relationship between BMI and systolic blood pressure: a one-unit increase in BMI is associated with approximately `r round(coef(model_one)["bmi"], 2)` mmHg higher systolic pressure. The magnitude is small and the R-squared of `r round(summary(model_one)$r.squared, 3)` confirms that BMI alone explains very little of the variation in blood pressure.
 
-When the model is extended to include age and smoking status, the explanatory power increases substantially, with the R-squared rising to approximately 0.26. In this specification, BMI remains statistically significant, although its estimated effect decreases slightly, suggesting that part of the association observed in the simple model is explained by other variables, particularly age. Age shows a strong and statistically significant positive relationship with blood pressure, indicating that it is a key factor in explaining variation in the outcome. Smoking status, however, does not appear to have a statistically significant effect in this model. Overall, the results suggest that while BMI is associated with blood pressure, its effect is modest compared to other factors such as age.
+When the model is extended to include age and smoking status, R-squared rises to `r round(summary(model_two)$r.squared, 2)`. BMI remains statistically significant but its estimated effect decreases slightly, suggesting that part of the association in Model 1 is explained by age. Age shows a strong positive relationship with blood pressure and is the dominant predictor in this specification. Smoking status does not appear to have a statistically significant effect.
 
-In Model 3, adding a BMI² term did not improve the model — neither the linear nor the squared BMI term is significant (p = 0.59 and p = 0.42, respectively), and the R² barely changes from 25.7% to 25.8%. This suggests the relationship between BMI and blood pressure is essentially linear within the range observed in this dataset, and the more complex polynomial model does not add descriptive value.
+In Model 3, adding a BMI² term produces a statistically significant coefficient on the confirmation set (p = `r round(summary(model_three)$coefficients["I(bmi^2)", "Pr(>|t|)"], 3)`), though the term was not significant during exploration. The R² moves from `r round(summary(model_two)$r.squared * 100, 1)`% to `r round(summary(model_three)$r.squared * 100, 1)`%, a negligible improvement. Because the modeling decision to drop the quadratic term was made on the exploration set, and because the practical gain is minimal, we treat the BMI-blood pressure relationship as approximately linear and do not carry the quadratic term into later specifications.
 
-In Model 4, including an interaction term between BMI and age shows that the effect of BMI on blood pressure depends on age. The interaction coefficient is negative and statistically significant, indicating that BMI has a stronger association with blood pressure at younger ages and a weaker association at older ages. While the overall model fit remains similar to Model 2, this specification provides insight on how BMI and age jointly relates to blood pressure.
+In Model 4, including an interaction term between BMI and age shows that the effect of BMI on blood pressure depends on age. The interaction coefficient is negative and statistically significant, indicating that BMI has a stronger association with blood pressure at younger ages and a weaker association at older ages. While the overall model fit remains similar to Model 2, this specification provides insight on how BMI and age jointly relate to blood pressure.
 
-In Model 5, adding a quadratic age term to the interaction model reveals that the age-blood pressure relationship accelerates at older ages. The Age² coefficient is positive and statistically significant (p < 0.001), indicating that blood pressure does not just increase steadily with age but steepens over time. The BMI × Age interaction remains significant and negative, confirming that BMI has a smaller association with blood pressure among older adults. Smoking remains nonsignificant. The adjusted R² increases slightly from 0.2622 in Model 4 to 0.2644, suggesting a modest improvement in explanatory power.
+In Model 5, adding a quadratic age term shows blood pressure climbing faster at older ages (Age² p < 0.001), and the BMI × Age interaction remains significant and negative, so BMI's link to blood pressure is weaker in older adults. We also swapped binary smoking for a three level classification (never, former, current) and added sex and race. Females have about 2 mmHg lower systolic pressure than males (p < 0.01), and Black participants have roughly 7 mmHg higher systolic pressure than White participants (p < 0.01). Since hypertension is defined as systolic BP $\geq$ 130 mmHg, a gap of nearly 7 mmHg can mean the difference between a normal reading and a Stage 1 diagnosis for two otherwise similar people. The three level smoking variable reveals that former smokers have slightly lower blood pressure than never smokers (p = `r round(summary(model_five)$coefficients["smokingformer", "Pr(>|t|)"], 3)`), something the binary variable missed. We read that finding cautiously because people who quit smoking may also adopt other healthy habits, so the lower blood pressure might not be about quitting itself. The adjusted R² improves to 0.28. These are adjusted associations, not causal effects. Diet, medication, or physical activity could shift the numbers. Table 2 illustrates this with example profiles: for a 30 year old male never smoker, going from BMI 25 to 35 predicts a larger systolic increase than for a 60 year old with the same profile. The table also shows how baseline blood pressure shifts across racial groups even when BMI, age, sex, and smoking are held constant.
+
+```{r hypothetical_table, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+pred_fn <- function(bmi_val, age_val, sex_val = 0, race_val = "White") {
+  round(predict(model_five, newdata = data.frame(
+    bmi = bmi_val, age = age_val, sex = sex_val,
+    race = factor(race_val, levels = levels(df_confirm$race)),
+    smoking = factor("never", levels = c("never", "former", "current"))
+  )), 1)
+}
+
+cat("\\begin{table}[h]
+\\centering
+\\footnotesize
+\\caption*{Table 2: Predicted Systolic BP (mmHg) Under Model 5: Never-Smoker (Example Profiles)}
+\\begin{tabular}{lllccc}
+\\hline
+Age & Sex & Race & BMI = 25 & BMI = 35 & Difference \\\\
+\\hline
+30 & Male & White &", pred_fn(25,30,0,"White"), "&", pred_fn(35,30,0,"White"), "&", round(pred_fn(35,30,0,"White")-pred_fn(25,30,0,"White"),1), "\\\\
+30 & Male & Black &", pred_fn(25,30,0,"Black"), "&", pred_fn(35,30,0,"Black"), "&", round(pred_fn(35,30,0,"Black")-pred_fn(25,30,0,"Black"),1), "\\\\
+30 & Male & Asian &", pred_fn(25,30,0,"Asian"), "&", pred_fn(35,30,0,"Asian"), "&", round(pred_fn(35,30,0,"Asian")-pred_fn(25,30,0,"Asian"),1), "\\\\
+30 & Female & White &", pred_fn(25,30,1,"White"), "&", pred_fn(35,30,1,"White"), "&", round(pred_fn(35,30,1,"White")-pred_fn(25,30,1,"White"),1), "\\\\
+60 & Male & White &", pred_fn(25,60,0,"White"), "&", pred_fn(35,60,0,"White"), "&", round(pred_fn(35,60,0,"White")-pred_fn(25,60,0,"White"),1), "\\\\
+60 & Male & Black &", pred_fn(25,60,0,"Black"), "&", pred_fn(35,60,0,"Black"), "&", round(pred_fn(35,60,0,"Black")-pred_fn(25,60,0,"Black"),1), "\\\\
+60 & Female & White &", pred_fn(25,60,1,"White"), "&", pred_fn(35,60,1,"White"), "&", round(pred_fn(35,60,1,"White")-pred_fn(25,60,1,"White"),1), "\\\\
+\\hline
+\\end{tabular}
+\\end{table}")
+```
 
 ## Overall Effect
 
-This analysis finds a consistent, positive association between BMI and systolic blood pressure — higher BMI tends to go with higher blood pressure, and this holds even after controlling for age and smoking. However, the effect is modest: BMI alone explains only 1.8% of the variation in blood pressure, while age turns out to be a much stronger predictor. The polynomial model also showed no meaningful curvature, suggesting the relationship is essentially linear. Incorporating an interaction between BMI and age further shows that the strength of the relationship varies across individuals, with BMI having a stronger association with blood pressure at younger ages and a weaker association at older ages. Adding a quadratic age term confirms that the age-blood pressure relationship is not constant — it steepens at older ages, meaning blood pressure rises more rapidly later in life. These findings give a clear descriptive picture of how BMI and blood pressure move together in the U.S. adult population.
+We set out to describe the relationship between BMI and systolic blood pressure in U.S. adults. Across all five specifications the answer is consistent: higher BMI tracks with higher systolic pressure, the association is approximately linear (the quadratic BMI term, while significant on the confirmation set, added less than 0.2 percentage points to R²), and it is strongest in younger adults. Age is the dominant predictor, race/ethnicity contributes a clinically meaningful gap (roughly 7 mmHg for Black versus White participants), and sex adds a modest offset, while smoking status matters only when coded at three levels. Together these covariates explain about 28% of systolic pressure variation, leaving sodium intake, physical activity, and antihypertensive medication to account for the rest. The data are cross sectional and we did not apply survey weights, so these associations describe this analytic sample and should not be read as causal or nationally representative. If future work linked these results to longitudinal NHANES panels or pulled in prescription records from the RX files, it could test whether the age dependent patterns hold up once treatment history is accounted for. The most notable pattern is that a 10 unit BMI difference in a younger adult corresponds to a predicted systolic pressure near the 130 mmHg hypertension threshold, suggesting that the BMI blood pressure association is most pronounced in the age range where it is least expected.
 
 \newpage
 
 ## Appendix
+
 ### Data Source
-NHANES 2017–2018 data is available at the 
-[NHANES Data Portal](https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2017).
+
+NHANES 2017-2018 data: <https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2017>
+
+### Model Specifications Tried
+
+1.  **Model 1** (bp \~ bmi): Baseline association. BMI is significant but explains only `r round(summary(model_one)$r.squared * 100, 1)`% of variance, which suggested that additional covariates were needed.
+2.  **Model 2** (bp \~ bmi + age + smoking): Adding age dramatically improved fit (R² from `r round(summary(model_one)$r.squared, 3)` to `r round(summary(model_two)$r.squared, 2)`). Binary smoking was nonsignificant.
+3.  **Model 3** (bp \~ bmi + bmi² + age + smoking): Tested nonlinearity in BMI. The quadratic term was not significant during exploration; it reached significance on the confirmation set (p = `r round(summary(model_three)$coefficients["I(bmi^2)", "Pr(>|t|)"], 3)`) but with negligible R² improvement, so we retained the linear specification.
+4.  **Model 4** (bp \~ bmi × age + smoking): Interaction revealed BMI matters more for younger adults and was motivated by the diverging slopes in Figure 1.
+5.  **Model 5** (bp \~ bmi × age + age² + smoking3 + sex + race): Added demographic controls and 3-level smoking. Sex and race are significant; former smoker is now significant. Adj R² improved to 0.28.
+
+We also explored physical activity, alcohol use, sodium intake, and BP medication as covariates. However, missingness in these variables (37–67%) reduced the sample from \~5,000 to 939 observations, introducing selection bias and collapsing the R² to 0.08 on the restricted subsample. These variables were therefore excluded from the final models.
 
 ### Residuals-vs-Fitted Plots
-```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=4, fig.align='center', fig.pos='H'}
 
-# Load packages safely
-if (!require(patchwork)) install.packages("patchwork")
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4.5, fig.align='center'}
+
 library(ggplot2)
 library(patchwork)
 
-# Function to create styled residual plot
 make_resid_plot <- function(model, title_text) {
   plot_data <- data.frame(
     fitted = fitted(model),
     residuals = resid(model)
   )
-  
   ggplot(plot_data, aes(x = fitted, y = residuals)) +
-    geom_point(color = "#2C7FB8", alpha = 0.5, size = 1.2) +   # blue points
-    geom_hline(yintercept = 0, color = "#D95F0E", linetype = "dashed", linewidth = 1) +  # orange line
-    geom_smooth(color = "#31A354", se = FALSE, linewidth = 0.8) +  # green trend
-    labs(
-      title = title_text,
-      x = "Fitted values",
-      y = "Residuals"
-    ) +
-    theme_minimal(base_size = 11) +
+    geom_point(color = "#2C7FB8", alpha = 0.4, size = 0.6) +
+    geom_hline(yintercept = 0, color = "#D95F0E", linetype = "dashed", linewidth = 0.7) +
+    geom_smooth(color = "#31A354", se = FALSE, linewidth = 0.6) +
+    labs(title = title_text, x = "Fitted", y = "Residuals") +
+    theme_minimal(base_size = 8) +
     theme(
-      plot.title = element_text(face = "bold", size = 12),
-      panel.grid.major = element_line(color = "gray85"),
-      panel.grid.minor = element_blank()
+      plot.title = element_text(face = "bold", size = 9),
+      axis.title = element_text(size = 7),
+      panel.grid.major = element_line(color = "gray90"),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(2, 4, 2, 4)
     )
 }
 
-# Create plots
-p1 <- make_resid_plot(model_one, "Model 1")
-p2 <- make_resid_plot(model_two, "Model 2")
-p3 <- make_resid_plot(model_three, "Model 3")
-p4 <- make_resid_plot(model_four, "Model 4")
-p5 <- make_resid_plot(model_five, "Model 5")
+p1 <- make_resid_plot(model_one, "Model 1: BMI")
+p2 <- make_resid_plot(model_two, "Model 2: + Age, Smoking")
+p3 <- make_resid_plot(model_three, "Model 3: + BMI²")
+p4 <- make_resid_plot(model_four, "Model 4: BMI × Age")
+p5 <- make_resid_plot(model_five, "Model 5: Full Specification")
 
-# Combine into layout
-(p1 | p2) / (p3 | p4) / (p5 | plot_spacer())
+(p1 | p2 | p3) / (p4 | p5 | plot_spacer())
 ```
+
+\newpage
+
+## References
+
+-   National Center for Health Statistics. (2024). Hypertension prevalence, awareness, treatment, and control among adults age 18 and older: United States, August 2021–August 2023. *NCHS Data Brief, No. 511*. <https://www.cdc.gov/nchs/products/databriefs/db511.htm>
+-   National Center for Health Statistics. (2024). Obesity and severe obesity prevalence in adults: United States, August 2021–August 2023. *NCHS Data Brief, No. 508*. <https://www.cdc.gov/nchs/products/databriefs/db508.htm>
+-   American Heart Association. (2025). Heart disease and stroke statistics—2025 update: A report from the American Heart Association. *Circulation*. <https://newsroom.heart.org/news/heart-disease-remains-leading-cause-of-death-as-key-health-risk-factors-continue-to-rise>
